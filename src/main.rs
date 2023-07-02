@@ -4,6 +4,7 @@
 use error_iter::ErrorIter as _;
 use log::{debug, error};
 use pixels::{Error, Pixels, SurfaceTexture};
+use rand::Rng;
 use winit::{
     dpi::LogicalSize,
     event::{Event, VirtualKeyCode},
@@ -37,7 +38,7 @@ fn main() -> Result<(), Error> {
         Pixels::new(WIDTH, HEIGHT, surface_texture)?
     };
 
-    let mut life = Grid::new_alternating(WIDTH as usize, HEIGHT as usize);
+    let mut life = Grid::new_random(WIDTH as usize, HEIGHT as usize);
 
     event_loop.run(move |event, _, control_flow| {
         // The one and only event that winit_input_helper doesn't have for us...
@@ -142,46 +143,73 @@ impl Grid {
         }
     }
 
-    fn new_alternating(width: usize, height: usize) -> Self {
+    fn new_random(width: usize, height: usize) -> Self {
         let mut result = Self::new_empty(width, height);
-        result.fill_alternating();
+        let mut rng = rand::thread_rng();
+        let r: f32 = rng.gen();
+        let heights: Vec<f32> = (0..1000).map(|x| f32::sin((x as f32) * r)).collect();
+        result.fill_bargraph(&heights);
         result
     }
 
-    fn fill_alternating(&mut self) {
-        let values = (0..10).map(|x| x as f64 * 0.01);
-        let grid = (0..10).into_iter().map(|x| x as f32).collect::<Vec<_>>();
+    pub fn update_bargraph(&mut self, new_heights: &[f32]) {
+        // Clear the existing grid first
+        self.cells = vec![Cell::default(); self.width * self.height];
 
-        for y in 0..self.height {
-            for x in 0..self.width {
+        // Now fill the grid with the new bar graph
+        self.fill_bargraph(new_heights);
+    }
+
+    fn fill_bargraph(&mut self, heights: &[f32]) {
+        assert!(
+            heights.len() <= self.width,
+            "Too many heights provided for the width of the grid"
+        );
+
+        // The width of each bar, assuming the number of bars is less than or equal to the width of the grid
+        let bar_width = self.width / heights.len();
+
+        for (bar_idx, &bar_height) in heights.iter().enumerate() {
+            // The height of the bar, scaled to the height of the grid
+            let grid_height = (bar_height * self.height as f32).round() as usize;
+
+            for bar_x in bar_idx * bar_width..(bar_idx + 1) * bar_width {
+                for y in 0..self.height {
+                    let idx = bar_x + y * self.width;
+                    // Set the cell to alive if its y-coordinate is less than the bar height
+                    self.cells[idx] = Cell::new(y > self.height - grid_height);
+                }
+            }
+        }
+
+        // Fill remaining cells with false if there are fewer bars than the width of the grid
+        for x in heights.len() * bar_width..self.width {
+            for y in 0..self.height {
                 let idx = x + y * self.width;
-                // Alternate based on row
-
-                let grid_idx = (y % grid.len()) as usize;
-                self.cells[idx] = Cell::new(f32::sin(y as f32 * x as f32 * 300.0) > 0.0);
+                self.cells[idx] = Cell::new(false);
             }
         }
     }
 
     fn update(&mut self) {
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let idx = x + y * self.width;
-                let next = self.cells[idx];
-                // Write into scratch_cells, since we're still reading from `self.cells`
-                self.scratch_cells[idx] = next;
-            }
-        }
+        // Generate a new set of heights
+        let new_heights: Vec<f32> = (0..1000)
+            .map(|_| rand::random::<f32>()) // Generates a random float between 0 and 1
+            .collect();
+
+        // Update the bar graph with the new set of heights
+        self.update_bargraph(&new_heights);
+
+        // Swap the buffers
         std::mem::swap(&mut self.scratch_cells, &mut self.cells);
     }
-
     fn draw(&self, screen: &mut [u8]) {
         debug_assert_eq!(screen.len(), 4 * self.cells.len());
         for (c, pix) in self.cells.iter().zip(screen.chunks_exact_mut(4)) {
             let color = if c.alive {
-                [0, 0xff, 0xff, 0xff]
+                [c.heat, 0xFF - c.heat, 0, 0xFF]
             } else {
-                [0, 0, c.heat, 0xff]
+                [c.heat, 0, 0xff - c.heat, 0xFF]
             };
             pix.copy_from_slice(&color);
         }
