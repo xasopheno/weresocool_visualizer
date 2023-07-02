@@ -1,6 +1,3 @@
-#![deny(clippy::all)]
-#![forbid(unsafe_code)]
-
 use error_iter::ErrorIter as _;
 use log::{debug, error};
 use pixels::{Error, Pixels, SurfaceTexture};
@@ -15,6 +12,7 @@ use winit_input_helper::WinitInputHelper;
 
 const WIDTH: u32 = 4000;
 const HEIGHT: u32 = 3000;
+const COUNT: u32 = 256;
 
 fn main() -> Result<(), Error> {
     env_logger::init();
@@ -125,6 +123,7 @@ struct Grid {
     cells: Vec<Cell>,
     width: usize,
     height: usize,
+    time: std::time::SystemTime,
     // Should always be the same size as `cells`. When updating, we read from
     // `cells` and write to `scratch_cells`, then swap. Otherwise it's not in
     // use, and `cells` should be updated directly.
@@ -135,19 +134,20 @@ impl Grid {
     fn new_empty(width: usize, height: usize) -> Self {
         assert!(width != 0 && height != 0);
         let size = width.checked_mul(height).expect("too big");
+        let now = std::time::SystemTime::now();
+
         Self {
             cells: vec![Cell::default(); size],
             scratch_cells: vec![Cell::default(); size],
             width,
             height,
+            time: now,
         }
     }
 
     fn new_random(width: usize, height: usize) -> Self {
         let mut result = Self::new_empty(width, height);
-        let mut rng = rand::thread_rng();
-        let r: f32 = rng.gen();
-        let heights: Vec<f32> = (0..1000).map(|x| f32::sin((x as f32) * r)).collect();
+        let heights: Vec<f32> = (0..COUNT).map(|x| f32::sin(x as f32)).collect();
         result.fill_bargraph(&heights);
         result
     }
@@ -193,9 +193,11 @@ impl Grid {
 
     fn update(&mut self) {
         // Generate a new set of heights
-        let new_heights: Vec<f32> = (0..1000)
-            .map(|_| rand::random::<f32>()) // Generates a random float between 0 and 1
-            .collect();
+        let r = rand::random::<f32>() * 0.1;
+        let now = std::time::SystemTime::now();
+        let since_the_epoch = now.duration_since(self.time).unwrap();
+        let t = since_the_epoch.as_secs_f32();
+        let new_heights: Vec<f32> = (0..COUNT).map(|x| f32::sin((t + x as f32) / 2.0)).collect();
 
         // Update the bar graph with the new set of heights
         self.update_bargraph(&new_heights);
@@ -207,9 +209,9 @@ impl Grid {
         debug_assert_eq!(screen.len(), 4 * self.cells.len());
         for (c, pix) in self.cells.iter().zip(screen.chunks_exact_mut(4)) {
             let color = if c.alive {
-                [c.heat, 0xFF - c.heat, 0, 0xFF]
+                [144u8, 100u8, 223u8, 0xFF]
             } else {
-                [c.heat, 0, 0xff - c.heat, 0xFF]
+                [10u8, 5u8, 38u8, 0xFF]
             };
             pix.copy_from_slice(&color);
         }
