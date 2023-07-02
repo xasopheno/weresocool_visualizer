@@ -1,0 +1,273 @@
+#![deny(clippy::all)]
+#![forbid(unsafe_code)]
+
+use error_iter::ErrorIter as _;
+use log::{debug, error};
+use pixels::{Error, Pixels, SurfaceTexture};
+use winit::{
+    dpi::LogicalSize,
+    event::{Event, VirtualKeyCode},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
+use winit_input_helper::WinitInputHelper;
+
+const WIDTH: u32 = 4000;
+const HEIGHT: u32 = 3000;
+
+fn main() -> Result<(), Error> {
+    env_logger::init();
+    let event_loop = EventLoop::new();
+    let mut input = WinitInputHelper::new();
+
+    let window = {
+        let size = LogicalSize::new(WIDTH as f64, HEIGHT as f64);
+        let scaled_size = LogicalSize::new(WIDTH as f64 * 3.0, HEIGHT as f64 * 3.0);
+        WindowBuilder::new()
+            .with_title("Conway's Game of Life")
+            .with_inner_size(scaled_size)
+            .with_min_inner_size(size)
+            .build(&event_loop)
+            .unwrap()
+    };
+
+    let mut pixels = {
+        let window_size = window.inner_size();
+        let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
+        Pixels::new(WIDTH, HEIGHT, surface_texture)?
+    };
+
+    let mut life = Grid::new_random(WIDTH as usize, HEIGHT as usize);
+
+    event_loop.run(move |event, _, control_flow| {
+        // The one and only event that winit_input_helper doesn't have for us...
+        if let Event::RedrawRequested(_) = event {
+            life.draw(pixels.frame_mut());
+            if let Err(err) = pixels.render() {
+                log_error("pixels.render", err);
+                *control_flow = ControlFlow::Exit;
+                return;
+            }
+        }
+
+        // For everything else, for let winit_input_helper collect events to build its state.
+        // It returns `true` when it is time to update our game state and request a redraw.
+        if input.update(&event) {
+            // Close events
+            if input.key_pressed(VirtualKeyCode::Escape) || input.close_requested() {
+                *control_flow = ControlFlow::Exit;
+                return;
+            }
+
+            // Resize the window
+            if let Some(size) = input.window_resized() {
+                if let Err(err) = pixels.resize_surface(size.width, size.height) {
+                    log_error("pixels.resize_surface", err);
+                    *control_flow = ControlFlow::Exit;
+                    return;
+                }
+            }
+            life.update();
+            window.request_redraw();
+        }
+    });
+}
+
+fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
+    error!("{method_name}() failed: {err}");
+    for source in err.sources().skip(1) {
+        error!("  Caused by: {source}");
+    }
+}
+
+/// Generate a pseudorandom seed for the game's PRNG.
+fn generate_seed() -> (u64, u64) {
+    use byteorder::{ByteOrder, NativeEndian};
+    use getrandom::getrandom;
+
+    let mut seed = [0_u8; 16];
+
+    getrandom(&mut seed).expect("failed to getrandom");
+
+    (
+        NativeEndian::read_u64(&seed[0..8]),
+        NativeEndian::read_u64(&seed[8..16]),
+    )
+}
+
+const BIRTH_RULE: [bool; 9] = [false, false, false, true, false, false, false, false, false];
+const SURVIVE_RULE: [bool; 9] = [false, false, true, true, false, false, false, false, false];
+const INITIAL_FILL: f32 = 0.3;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct Cell {
+    alive: bool,
+    // Used for the trail effect. Always 255 if `self.alive` is true (We could
+    // use an enum for Cell, but it makes several functions slightly more
+    // complex, and doesn't actually make anything any simpler here, or save any
+    // memory, so we don't)
+    heat: u8,
+}
+
+impl Cell {
+    fn new(alive: bool) -> Self {
+        Self { alive, heat: 0 }
+    }
+
+    #[must_use]
+    fn update_neibs(self, n: usize) -> Self {
+        let next_alive = if self.alive {
+            SURVIVE_RULE[n]
+        } else {
+            BIRTH_RULE[n]
+        };
+        self.next_state(next_alive)
+    }
+
+    #[must_use]
+    fn next_state(mut self, alive: bool) -> Self {
+        self.alive = alive;
+        if self.alive {
+            self.heat = 255;
+        } else {
+            self.heat = self.heat.saturating_sub(1);
+        }
+        self
+    }
+
+    fn set_alive(&mut self, alive: bool) {
+        *self = self.next_state(alive);
+    }
+
+    fn cool_off(&mut self, decay: f32) {
+        if !self.alive {
+            let heat = (self.heat as f32 * decay).clamp(0.0, 255.0);
+            assert!(heat.is_finite());
+            self.heat = heat as u8;
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Grid {
+    cells: Vec<Cell>,
+    width: usize,
+    height: usize,
+    // Should always be the same size as `cells`. When updating, we read from
+    // `cells` and write to `scratch_cells`, then swap. Otherwise it's not in
+    // use, and `cells` should be updated directly.
+    scratch_cells: Vec<Cell>,
+}
+
+impl Grid {
+    fn new_empty(width: usize, height: usize) -> Self {
+        assert!(width != 0 && height != 0);
+        let size = width.checked_mul(height).expect("too big");
+        Self {
+            cells: vec![Cell::default(); size],
+            scratch_cells: vec![Cell::default(); size],
+            width,
+            height,
+        }
+    }
+
+    fn new_random(width: usize, height: usize) -> Self {
+        let mut result = Self::new_empty(width, height);
+        result.randomize();
+        result
+    }
+
+    fn randomize(&mut self) {
+        for (i, c) in self.cells.iter_mut().enumerate() {
+            *c = Cell::new(f32::sin(i as f32 * 1.0) > 0.4);
+        }
+        for _ in 0..3 {
+            self.update();
+        }
+        for c in self.cells.iter_mut() {
+            c.cool_off(0.4);
+        }
+    }
+
+    fn count_neibs(&self, x: usize, y: usize) -> usize {
+        let (xm1, xp1) = if x == 0 {
+            (self.width - 1, x + 1)
+        } else if x == self.width - 1 {
+            (x - 1, 0)
+        } else {
+            (x - 1, x + 1)
+        };
+        let (ym1, yp1) = if y == 0 {
+            (self.height - 1, y + 1)
+        } else if y == self.height - 1 {
+            (y - 1, 0)
+        } else {
+            (y - 1, y + 1)
+        };
+        self.cells[xm1 + ym1 * self.width].alive as usize
+            + self.cells[x + ym1 * self.width].alive as usize
+            + self.cells[xp1 + ym1 * self.width].alive as usize
+            + self.cells[xm1 + y * self.width].alive as usize
+            + self.cells[xp1 + y * self.width].alive as usize
+            + self.cells[xm1 + yp1 * self.width].alive as usize
+            + self.cells[x + yp1 * self.width].alive as usize
+            + self.cells[xp1 + yp1 * self.width].alive as usize
+    }
+
+    fn update(&mut self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let neibs = self.count_neibs(x, y);
+                let idx = x + y * self.width;
+                let next = self.cells[idx].update_neibs(neibs);
+                // Write into scratch_cells, since we're still reading from `self.cells`
+                self.scratch_cells[idx] = next;
+            }
+        }
+        std::mem::swap(&mut self.scratch_cells, &mut self.cells);
+    }
+
+    fn toggle(&mut self, x: isize, y: isize) -> bool {
+        if let Some(i) = self.grid_idx(x, y) {
+            let was_alive = self.cells[i].alive;
+            self.cells[i].set_alive(!was_alive);
+            !was_alive
+        } else {
+            false
+        }
+    }
+
+    fn draw(&self, screen: &mut [u8]) {
+        debug_assert_eq!(screen.len(), 4 * self.cells.len());
+        for (c, pix) in self.cells.iter().zip(screen.chunks_exact_mut(4)) {
+            let color = if c.alive {
+                [0, 0xff, 0xff, 0xff]
+            } else {
+                [0, 0, c.heat, 0xff]
+            };
+            pix.copy_from_slice(&color);
+        }
+    }
+
+    fn set_line(&mut self, x0: isize, y0: isize, x1: isize, y1: isize, alive: bool) {
+        // probably should do sutherland-hodgeman if this were more serious.
+        // instead just clamp the start pos, and draw until moving towards the
+        // end pos takes us out of bounds.
+        let x0 = x0.clamp(0, self.width as isize);
+        let y0 = y0.clamp(0, self.height as isize);
+        for (x, y) in line_drawing::Bresenham::new((x0, y0), (x1, y1)) {
+            if let Some(i) = self.grid_idx(x, y) {
+                self.cells[i].set_alive(alive);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn grid_idx<I: std::convert::TryInto<usize>>(&self, x: I, y: I) -> Option<usize> {
+        match (x.try_into(), y.try_into()) {
+            (Ok(x), Ok(y)) if x < self.width && y < self.height => Some(x + y * self.width),
+            _ => None,
+        }
+    }
+}
