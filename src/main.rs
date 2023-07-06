@@ -2,6 +2,7 @@ use error_iter::ErrorIter as _;
 use log::{debug, error};
 use pixels::{Error, Pixels, SurfaceTexture};
 use rand::Rng;
+use weresocool_fft::*;
 use winit::{
     dpi::LogicalSize,
     event::{Event, VirtualKeyCode},
@@ -10,9 +11,9 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper;
 
-const WIDTH: u32 = 4000;
-const HEIGHT: u32 = 3000;
-const COUNT: u32 = 256;
+const WIDTH: u32 = 1024;
+const HEIGHT: u32 = 512;
+const COUNT: u32 = 1024;
 
 fn main() -> Result<(), Error> {
     env_logger::init();
@@ -25,7 +26,8 @@ fn main() -> Result<(), Error> {
         WindowBuilder::new()
             .with_title("Conway's Game of Life")
             .with_inner_size(scaled_size)
-            .with_min_inner_size(size)
+            // .with_inner_size(scaled_size)
+            // .with_min_inner_size(size)
             .build(&event_loop)
             .unwrap()
     };
@@ -36,7 +38,7 @@ fn main() -> Result<(), Error> {
         Pixels::new(WIDTH, HEIGHT, surface_texture)?
     };
 
-    let mut life = Grid::new_random(WIDTH as usize, HEIGHT as usize);
+    let mut life = Grid::new_bargraph(WIDTH as usize, HEIGHT as usize);
 
     event_loop.run(move |event, _, control_flow| {
         // The one and only event that winit_input_helper doesn't have for us...
@@ -145,7 +147,7 @@ impl Grid {
         }
     }
 
-    fn new_random(width: usize, height: usize) -> Self {
+    fn new_bargraph(width: usize, height: usize) -> Self {
         let mut result = Self::new_empty(width, height);
         let heights: Vec<f32> = (0..COUNT).map(|x| f32::sin(x as f32)).collect();
         result.fill_bargraph(&heights);
@@ -191,13 +193,27 @@ impl Grid {
         }
     }
 
+    fn process_buffer(buffer: &mut Vec<f32>) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let mut complex_buffer = f32_to_complex(&buffer);
+
+        fft_in_place(&mut complex_buffer);
+
+        let magnitude_buffer: Vec<_> = complex_buffer.iter().map(|c| c.norm()).collect();
+
+        buffer.clear();
+
+        Ok(magnitude_buffer)
+    }
+
     fn update(&mut self) {
         // Generate a new set of heights
         let r = rand::random::<f32>() * 0.1;
         let now = std::time::SystemTime::now();
         let since_the_epoch = now.duration_since(self.time).unwrap();
         let t = since_the_epoch.as_secs_f32();
-        let new_heights: Vec<f32> = (0..COUNT).map(|x| f32::sin((t + x as f32) / 2.0)).collect();
+        let new_heights: Vec<f32> = (0..COUNT)
+            .map(|x| f32::sin((t + x as f32 * 8.0 * 8.0 * 8.0) / 2.0))
+            .collect();
 
         // Update the bar graph with the new set of heights
         self.update_bargraph(&new_heights);
