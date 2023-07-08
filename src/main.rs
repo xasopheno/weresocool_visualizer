@@ -25,6 +25,8 @@ const COUNT: u32 = 2048;
 
 const LOGICAL_WIDTH: u32 = 1024;
 const LOGICAL_HEIGHT: u32 = 512;
+const BUFFER_SIZE: usize = 1024 * 4;
+const FFT_DIV: usize = 8;
 
 pub fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
     let def_output = pa.default_output_device().unwrap();
@@ -33,7 +35,7 @@ pub fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSetti
     let latency = output_info.default_low_output_latency;
     let output_params = pa::StreamParameters::new(def_output, 2, true, latency);
 
-    let output_settings = pa::OutputStreamSettings::new(output_params, 48000.0, 1024);
+    let output_settings = pa::OutputStreamSettings::new(output_params, 48000.0, BUFFER_SIZE as u32);
 
     Ok(output_settings)
 }
@@ -61,19 +63,20 @@ fn main() -> Result<(), Error> {
 
     let mut graph = Grid::new_bargraph(WIDTH as usize, HEIGHT as usize);
 
-    let buffer_size = 1024;
-
-    let (s_fft, r_fft) = channel::unbounded();
+    let (s_fft_r, r_fft_r) = channel::unbounded();
+    let (s_fft_l, r_fft_l) = channel::unbounded();
     let (s_audio, r_audio) = channel::unbounded();
     let r_audio = Arc::new(Mutex::new(r_audio));
     let r_audio_clone = Arc::clone(&r_audio);
-    let (read_fn, fft_handle) = WscFFT::spawn(buffer_size, r_fft);
+    let (read_fn_l, fft_handle_l) = WscFFT::spawn(BUFFER_SIZE as usize, r_fft_l);
+    let (read_fn_r, fft_handle_r) = WscFFT::spawn(BUFFER_SIZE as usize, r_fft_r);
 
     // Open the audio file with hound
-    let mut reader = hound::WavReader::open("./src/simple.wav").unwrap();
+    let mut reader = hound::WavReader::open("./src/mmoodd.wav").unwrap();
     let spec = reader.spec();
     println!("{:?}", spec);
 
+    // Initialize the PortAudio device
     let pa = pa::PortAudio::new().unwrap();
     let output_stream_settings = get_output_settings(&pa)?;
     dbg!(output_stream_settings);
@@ -83,17 +86,25 @@ fn main() -> Result<(), Error> {
             output_stream_settings,
             move |pa::OutputStreamCallbackArgs { buffer, frames, .. }| {
                 let r_audio_lock = r_audio_clone.lock().unwrap();
-                let sender = s_fft.clone();
+                let sender_l = s_fft_l.clone();
+                let sender_r = s_fft_r.clone();
                 let mut audio_data = (*r_audio_lock)
                     .recv()
                     .unwrap_or_else(|_| vec![0.0; frames * 2]); // *2 for stereo
 
-                let fft_data: Vec<f32> = audio_data
+                // If your FFT function needs mono data, you might want to average the stereo samples
+                let fft_data_l: Vec<f32> = audio_data
                     .chunks(2)
-                    .map(|stereo_sample| (stereo_sample[0] + stereo_sample[1]) / 2.0)
+                    .map(|stereo_sample| stereo_sample[0])
                     .collect();
 
-                sender.send(fft_data).unwrap();
+                let fft_data_r: Vec<f32> = audio_data
+                    .chunks(2)
+                    .map(|stereo_sample| stereo_sample[0])
+                    .collect();
+
+                sender_l.send(fft_data_l).unwrap();
+                sender_r.send(fft_data_r).unwrap();
 
                 for frame in 0..frames {
                     let index = frame * 2; // *2 for stereo
@@ -105,7 +116,7 @@ fn main() -> Result<(), Error> {
             },
         )
         .unwrap();
-    let mut interleaved_buffer = vec![0.0; buffer_size * 2];
+    let mut interleaved_buffer = vec![0.0; BUFFER_SIZE * 2];
 
     // Create a new thread to handle audio processing
     thread::spawn(move || {
@@ -113,13 +124,13 @@ fn main() -> Result<(), Error> {
 
         for sample in reader.samples::<f32>() {
             let sample = sample.unwrap();
-            let index = counter % (buffer_size * 2); // *2 for stereo
+            let index = counter % (BUFFER_SIZE * 2); // *2 for stereo
 
             interleaved_buffer[index] = sample;
 
             counter += 1;
 
-            if counter % (buffer_size * 2) == 0 {
+            if counter % (BUFFER_SIZE * 2) == 0 {
                 // *2 for stereo
                 s_audio.send(interleaved_buffer.clone()).unwrap();
             }
@@ -131,8 +142,11 @@ fn main() -> Result<(), Error> {
     event_loop.run(move |event, _, control_flow| {
         // The one and only event that winit_input_helper doesn't have for us...
         if let Event::RedrawRequested(_) = event {
-            let fft_results = read_fn(); // Read the FFT results here
-            graph.update(&fft_results); // Assuming `graph` has an update method to handle new FFT results
+            let fft_results_l = read_fn_l(); // Read the FFT results here
+            let fft_results_r = read_fn_r(); // Read the FFT results here
+            let l = fft_results_l[2..&fft_results_l.len() / FFT_DIV].to_vec();
+            let r = fft_results_r[2..&fft_results_r.len() / FFT_DIV].to_vec();
+            graph.update_bargraph(&[&l[..], &r[..]].concat()); // Assuming `graph` has an update method to handle new FFT results
             graph.draw(pixels.frame_mut());
             if let Err(err) = pixels.render() {
                 log_error("pixels.render", err);
