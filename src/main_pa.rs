@@ -1,12 +1,13 @@
 mod graph;
 use crossbeam_channel as channel;
+use crossbeam_channel::{Receiver, Sender};
 use error_iter::ErrorIter as _;
 use graph::*;
 use log::error;
 use pixels::{Error, Pixels, SurfaceTexture};
 use portaudio as pa;
 use std::convert::TryInto;
-use std::sync::mpsc::{Receiver, Sender};
+// use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use weresocool_fft::WscFFT;
@@ -19,9 +20,9 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper;
 
-const WIDTH: u32 = 2048;
+const WIDTH: u32 = 1024;
 const HEIGHT: u32 = 1024;
-const COUNT: u32 = 2048;
+const COUNT: u32 = 1024;
 
 const LOGICAL_WIDTH: u32 = 1024;
 const LOGICAL_HEIGHT: u32 = 512;
@@ -64,69 +65,67 @@ fn main() -> Result<(), Error> {
     let buffer_size = 1024;
 
     let (s_fft, r_fft) = channel::unbounded();
-    let (s_audio, r_audio) = channel::unbounded();
+    let (s_audio, r_audio): (Sender<Vec<f32>>, Receiver<Vec<f32>>) = channel::unbounded();
     let r_audio = Arc::new(Mutex::new(r_audio));
     let r_audio_clone = Arc::clone(&r_audio);
     let (read_fn, fft_handle) = WscFFT::spawn(buffer_size, r_fft);
 
-    // Open the audio file with hound
-    let mut reader = hound::WavReader::open("./src/simple.wav").unwrap();
-    let spec = reader.spec();
-    println!("{:?}", spec);
+    let wav_reader = hound::WavReader::open("src/simple.wav").unwrap();
+    let spec = wav_reader.spec();
+    let samples: Vec<_> = wav_reader
+        .into_samples::<f32>()
+        .filter_map(Result::ok)
+        .collect();
 
     let pa = pa::PortAudio::new().unwrap();
-    let output_stream_settings = get_output_settings(&pa)?;
-    dbg!(output_stream_settings);
 
-    let mut stream = pa
-        .open_non_blocking_stream(
-            output_stream_settings,
-            move |pa::OutputStreamCallbackArgs { buffer, frames, .. }| {
-                let r_audio_lock = r_audio_clone.lock().unwrap();
-                let sender = s_fft.clone();
-                let mut audio_data = (*r_audio_lock)
-                    .recv()
-                    .unwrap_or_else(|_| vec![0.0; frames * 2]); // *2 for stereo
+    let settings = get_output_settings(&pa)?;
 
-                let fft_data: Vec<f32> = audio_data
-                    .chunks(2)
-                    .map(|stereo_sample| (stereo_sample[0] + stereo_sample[1]) / 2.0)
-                    .collect();
-
-                sender.send(fft_data).unwrap();
-
-                for frame in 0..frames {
-                    let index = frame * 2; // *2 for stereo
-                    buffer[index] = audio_data.remove(0); // Left channel
-                    buffer[index + 1] = audio_data.remove(0); // Right channel
-                }
-
-                pa::Continue
-            },
-        )
-        .unwrap();
-    let mut interleaved_buffer = vec![0.0; buffer_size * 2];
-
-    // Create a new thread to handle audio processing
-    thread::spawn(move || {
-        let mut counter = 0;
-
-        for sample in reader.samples::<f32>() {
-            let sample = sample.unwrap();
-            let index = counter % (buffer_size * 2); // *2 for stereo
-
-            interleaved_buffer[index] = sample;
-
-            counter += 1;
-
-            if counter % (buffer_size * 2) == 0 {
-                // *2 for stereo
-                s_audio.send(interleaved_buffer.clone()).unwrap();
+    let callback = move |pa::OutputStreamCallbackArgs { buffer, frames, .. }| {
+        let mut idx = 0;
+        for frame in 0..frames {
+            buffer[frame] = (samples[idx] as f32) / std::i16::MAX as f32;
+            idx += 1;
+            if idx >= samples.len() {
+                return pa::Complete;
             }
         }
-    });
-    // Start the PortAudio stream
+
+        pa::Continue
+    };
+
+    let mut stream = pa.open_non_blocking_stream(settings, callback).unwrap();
     stream.start().unwrap();
+
+    // let mut stream = pa.open_non_blocking_stream(settings, callback).unwrap();
+    // stream.start().unwrap();
+    // let mut interleaved_buffer = vec![0.0; buffer_size * 2];
+
+    // // Create a new thread to handle audio processing
+    // thread::spawn(move || {
+    // let mut counter = 0;
+
+    // let sender = s_fft.clone();
+    // for sample in reader.samples::<f32>() {
+    // let sample = sample.unwrap();
+    // let index = counter % buffer_size;
+
+    // interleaved_buffer[index * 2] = sample; // Left channel
+    // interleaved_buffer[index * 2 + 1] = sample; // Right channel
+
+    // counter += 1;
+
+    // if counter % buffer_size == 0 {
+    // s_audio.send(interleaved_buffer.clone()).unwrap();
+    // }
+
+    // sender
+    // .send(interleaved_buffer.clone()[0..interleaved_buffer.len() / 2].to_vec())
+    // .unwrap();
+    // }
+    // });
+    // Start the PortAudio stream
+    // stream.start().unwrap();
 
     event_loop.run(move |event, _, control_flow| {
         // The one and only event that winit_input_helper doesn't have for us...
