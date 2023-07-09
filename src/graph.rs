@@ -1,15 +1,19 @@
 use std::convert::TryInto;
 use weresocool_fft::*;
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Cell {
     alive: bool,
     heat: f32,
+    activated_this_turn: bool,
 }
 
 impl Cell {
     fn new(alive: bool, heat: f32) -> Self {
-        Self { alive, heat }
+        Self {
+            alive,
+            heat,
+            activated_this_turn: false,
+        }
     }
 
     fn cool_off(&mut self, decay: f32) {
@@ -20,7 +24,6 @@ impl Cell {
         self.heat = 1.0;
     }
 }
-
 pub struct Grid {
     cells: Vec<Cell>,
     width: usize,
@@ -34,10 +37,10 @@ impl Grid {
         let size = width.checked_mul(height).expect("too big");
 
         Self {
-            cells: vec![Cell::default(); size],
+            cells: vec![Cell::new(false, 0.0); size],
             width,
             height,
-            decay: 2.0,
+            decay: 0.90,
         }
     }
 
@@ -63,29 +66,42 @@ impl Grid {
                 for y in 0..self.height {
                     let idx = bar_x + y * self.width;
                     let alive = y > (self.height - grid_height);
-                    self.cells[idx] = Cell::new(alive, self.cells[idx].heat);
+
+                    // Update only the cells that are alive
                     if alive {
+                        self.cells[idx].alive = true;
                         self.cells[idx].reset_heat();
+                        self.cells[idx].activated_this_turn = true;
                     }
                 }
             }
         }
+
+        // Now cool off all cells
+        for cell in &mut self.cells {
+            cell.cool_off(self.decay);
+        }
     }
 
     pub fn update_bargraph(&mut self, new_heights: &[f32]) {
-        self.cells = vec![Cell::default(); self.width * self.height];
+        // First, reset all cells
+        for cell in &mut self.cells {
+            cell.alive = false;
+            cell.activated_this_turn = false;
+        }
+
+        // Then fill the bargraph and cool off cells
         self.fill_bargraph(new_heights);
     }
 
     pub fn draw(&mut self, screen: &mut [u8]) {
         debug_assert_eq!(screen.len(), 4 * self.cells.len());
-        for (c, pix) in self.cells.iter_mut().zip(screen.chunks_exact_mut(4)) {
+        for (c, pix) in self.cells.iter().zip(screen.chunks_exact_mut(4)) {
             let color = if c.alive {
                 [144u8, 100u8, 223u8, (c.heat * 255.0) as u8]
             } else {
-                [100u8, 100u8, 223u8, (c.heat * 255.0) as u8]
+                [193u8, 140u8, 183u8, (c.heat * 255.0) as u8]
             };
-            c.cool_off(self.decay);
             pix.copy_from_slice(&color);
         }
     }

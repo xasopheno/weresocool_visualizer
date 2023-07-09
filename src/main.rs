@@ -26,7 +26,7 @@ const COUNT: u32 = 2048;
 const LOGICAL_WIDTH: u32 = 1024;
 const LOGICAL_HEIGHT: u32 = 512;
 const BUFFER_SIZE: usize = 1024 * 4;
-const FFT_DIV: usize = 8;
+const FFT_DIV: usize = 20;
 
 pub fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
     let def_output = pa.default_output_device().unwrap();
@@ -72,7 +72,7 @@ fn main() -> Result<(), Error> {
     let (read_fn_r, fft_handle_r) = WscFFT::spawn(BUFFER_SIZE as usize, r_fft_r);
 
     // Open the audio file with hound
-    let mut reader = hound::WavReader::open("./src/mmoodd.wav").unwrap();
+    let mut reader = hound::WavReader::open("./src/for_sam.wav").unwrap();
     let spec = reader.spec();
     println!("{:?}", spec);
 
