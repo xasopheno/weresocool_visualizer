@@ -1,16 +1,13 @@
-mod graph;
+mod grid;
 use crossbeam_channel as channel;
 use error_iter::ErrorIter as _;
-use graph::*;
+use grid::*;
 use log::error;
 use pixels::{Error, Pixels, SurfaceTexture};
 use portaudio as pa;
-use std::convert::TryInto;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use weresocool_fft::WscFFT;
-use weresocool_fft::*;
 use winit::{
     dpi::LogicalSize,
     event::{Event, VirtualKeyCode},
@@ -21,17 +18,86 @@ use winit_input_helper::WinitInputHelper;
 
 const WIDTH: u32 = 2048;
 const HEIGHT: u32 = 1024;
-const COUNT: u32 = 2048;
-
 const LOGICAL_WIDTH: u32 = 1024;
 const LOGICAL_HEIGHT: u32 = 512;
 const BUFFER_SIZE: usize = 1024 * 4;
 const FFT_DIV: usize = 20;
 
-pub fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
+struct FFTHandler {
+    buffer_size: usize,
+    num_results: usize,
+    read_fn: Box<dyn Fn() -> Vec<f32>>,
+}
+
+impl FFTHandler {
+    fn new(buffer_size: usize, num_results: usize, r_fft: channel::Receiver<Vec<f32>>) -> Self {
+        let (read_fn, _) = WscFFT::spawn(buffer_size, r_fft);
+        FFTHandler {
+            buffer_size,
+            num_results,
+            read_fn: Box::new(read_fn),
+        }
+    }
+
+    fn read_results(&self) -> Vec<f32> {
+        let results = (self.read_fn)();
+        results[2..self.num_results].to_vec()
+    }
+}
+
+struct WindowHandler {
+    width: u32,
+    height: u32,
+    window: winit::window::Window,
+}
+
+impl WindowHandler {
+    fn new(width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
+        let size = LogicalSize::new(width as f64, height as f64);
+        let window = WindowBuilder::new()
+            .with_title("weresoFFT")
+            .with_inner_size(size)
+            .build(&event_loop)
+            .unwrap();
+
+        WindowHandler {
+            width,
+            height,
+            window,
+        }
+    }
+
+    fn inner_size(&self) -> (u32, u32) {
+        let size = self.window.inner_size();
+        (size.width, size.height)
+    }
+}
+
+struct GraphHandler {
+    width: usize,
+    height: usize,
+    grid: Grid,
+}
+
+impl GraphHandler {
+    fn new(width: usize, height: usize) -> Self {
+        let grid = Grid::new_bargraph(width, height);
+        GraphHandler {
+            width,
+            height,
+            grid,
+        }
+    }
+
+    fn update_and_draw(&mut self, pixels: &mut [u8], l: &[f32], r: &[f32]) {
+        self.grid.update_bargraph(l, r);
+        self.grid.draw(pixels);
+    }
+}
+
+fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
     let def_output = pa.default_output_device().unwrap();
     let output_info = pa.device_info(def_output).unwrap();
-    // println!("Default output device info: {:#?}", &output_info);
     let latency = output_info.default_low_output_latency;
     let output_params = pa::StreamParameters::new(def_output, 2, true, latency);
 
@@ -39,47 +105,38 @@ pub fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSetti
 
     Ok(output_settings)
 }
+
 fn main() -> Result<(), Error> {
     env_logger::init();
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
 
-    let window = {
-        let size = LogicalSize::new(LOGICAL_WIDTH as f64, LOGICAL_HEIGHT as f64);
-        WindowBuilder::new()
-            .with_title("weresoFFT")
-            .with_inner_size(size)
-            // .with_inner_size(scaled_size)
-            // .with_min_inner_size(size)
-            .build(&event_loop)
-            .unwrap()
-    };
+    let window_handler = WindowHandler::new(LOGICAL_WIDTH, LOGICAL_HEIGHT, &event_loop);
 
     let mut pixels = {
-        let window_size = window.inner_size();
-        let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
+        let (window_width, window_height) = window_handler.inner_size();
+        let surface_texture =
+            SurfaceTexture::new(window_width, window_height, &window_handler.window);
         Pixels::new(WIDTH, HEIGHT, surface_texture)?
     };
 
-    let mut graph = Grid::new_bargraph(WIDTH as usize, HEIGHT as usize);
+    let mut graph_handler = GraphHandler::new(WIDTH as usize, HEIGHT as usize);
 
     let (s_fft_r, r_fft_r) = channel::unbounded();
     let (s_fft_l, r_fft_l) = channel::unbounded();
     let (s_audio, r_audio) = channel::unbounded();
     let r_audio = Arc::new(Mutex::new(r_audio));
     let r_audio_clone = Arc::clone(&r_audio);
-    let (read_fn_l, fft_handle_l) = WscFFT::spawn(BUFFER_SIZE as usize, r_fft_l);
-    let (read_fn_r, fft_handle_r) = WscFFT::spawn(BUFFER_SIZE as usize, r_fft_r);
 
-    // Open the audio file with hound
+    let fft_handler_l = FFTHandler::new(BUFFER_SIZE as usize, BUFFER_SIZE / FFT_DIV, r_fft_l);
+    let fft_handler_r = FFTHandler::new(BUFFER_SIZE as usize, BUFFER_SIZE / FFT_DIV, r_fft_r);
+
     let mut reader = hound::WavReader::open("./src/for_sam.wav").unwrap();
     let spec = reader.spec();
     println!("{:?}", spec);
 
-    // Initialize the PortAudio device
     let pa = pa::PortAudio::new().unwrap();
     let output_stream_settings = get_output_settings(&pa)?;
-    dbg!(output_stream_settings);
 
     let mut stream = pa
         .open_non_blocking_stream(
@@ -88,98 +145,74 @@ fn main() -> Result<(), Error> {
                 let r_audio_lock = r_audio_clone.lock().unwrap();
                 let sender_l = s_fft_l.clone();
                 let sender_r = s_fft_r.clone();
-                let mut audio_data = (*r_audio_lock)
+                let audio_data = (*r_audio_lock)
                     .recv()
                     .unwrap_or_else(|_| vec![0.0; frames * 2]); // *2 for stereo
 
-                // If your FFT function needs mono data, you might want to average the stereo samples
-                let fft_data_l: Vec<f32> = audio_data
-                    .chunks(2)
-                    .map(|stereo_sample| stereo_sample[0])
-                    .collect();
+                sender_l
+                    .send(audio_data.iter().step_by(2).cloned().collect())
+                    .unwrap();
+                sender_r
+                    .send(audio_data.iter().skip(1).step_by(2).cloned().collect())
+                    .unwrap();
 
-                let fft_data_r: Vec<f32> = audio_data
-                    .chunks(2)
-                    .map(|stereo_sample| stereo_sample[0])
-                    .collect();
-
-                sender_l.send(fft_data_l).unwrap();
-                sender_r.send(fft_data_r).unwrap();
-
-                for frame in 0..frames {
-                    let index = frame * 2; // *2 for stereo
-                    buffer[index] = audio_data.remove(0); // Left channel
-                    buffer[index + 1] = audio_data.remove(0); // Right channel
+                for (frame, chunk) in audio_data.chunks_exact(2).enumerate() {
+                    let index = frame * 2;
+                    buffer[index] = chunk[0];
+                    buffer[index + 1] = chunk[1];
                 }
 
                 pa::Continue
             },
         )
         .unwrap();
+
     let mut interleaved_buffer = vec![0.0; BUFFER_SIZE * 2];
 
-    // Create a new thread to handle audio processing
     thread::spawn(move || {
         let mut counter = 0;
 
         for sample in reader.samples::<f32>() {
             let sample = sample.unwrap();
-            let index = counter % (BUFFER_SIZE * 2); // *2 for stereo
+            let index = counter % (BUFFER_SIZE * 2);
 
             interleaved_buffer[index] = sample;
 
             counter += 1;
 
             if counter % (BUFFER_SIZE * 2) == 0 {
-                // *2 for stereo
                 s_audio.send(interleaved_buffer.clone()).unwrap();
             }
         }
     });
-    // Start the PortAudio stream
+
     stream.start().unwrap();
 
     event_loop.run(move |event, _, control_flow| {
-        // The one and only event that winit_input_helper doesn't have for us...
         if let Event::RedrawRequested(_) = event {
-            let fft_results_l = read_fn_l(); // Read the FFT results here
-            let fft_results_r = read_fn_r(); // Read the FFT results here
-            let l = fft_results_l[2..&fft_results_l.len() / FFT_DIV].to_vec();
-            let r = fft_results_r[2..&fft_results_r.len() / FFT_DIV].to_vec();
-            graph.update_bargraph(&[&l[..], &r[..]].concat()); // Assuming `graph` has an update method to handle new FFT results
-            graph.draw(pixels.frame_mut());
-            if let Err(err) = pixels.render() {
-                log_error("pixels.render", err);
+            let fft_results_l = fft_handler_l.read_results();
+            let fft_results_r = fft_handler_r.read_results();
+
+            graph_handler.update_and_draw(pixels.frame_mut(), &fft_results_l, &fft_results_r);
+
+            if pixels.render().is_err() {
                 *control_flow = ControlFlow::Exit;
                 return;
             }
         }
 
-        // For everything else, for let winit_input_helper collect events to build its state.
-        // It returns `true` when it is time to update our game state and request a redraw.
         if input.update(&event) {
-            // Close events
-            if input.key_pressed(VirtualKeyCode::Escape) || input.close_requested() {
+            if input.key_pressed(VirtualKeyCode::Escape) || input.quit() {
                 *control_flow = ControlFlow::Exit;
                 return;
             }
-
-            // Resize the window
             if let Some(size) = input.window_resized() {
-                if let Err(err) = pixels.resize_surface(size.width, size.height) {
-                    log_error("pixels.resize_surface", err);
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
+                _ = pixels.resize_surface(size.width, size.height);
             }
-            window.request_redraw();
+        }
+
+        if let Event::MainEventsCleared = event {
+            window_handler.window.request_redraw();
         }
     });
-}
-
-fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
-    error!("{method_name}() failed: {err}");
-    for source in err.sources().skip(1) {
-        error!("  Caused by: {source}");
-    }
 }
