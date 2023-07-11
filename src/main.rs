@@ -1,13 +1,12 @@
 mod grid;
 use crossbeam_channel as channel;
-use error_iter::ErrorIter as _;
 use grid::*;
-use log::error;
 use pixels::{Error, Pixels, SurfaceTexture};
 use portaudio as pa;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use weresocool_fft::WscFFT;
+use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::{
     dpi::LogicalSize,
     event::{Event, VirtualKeyCode},
@@ -17,11 +16,11 @@ use winit::{
 use winit_input_helper::WinitInputHelper;
 
 const WIDTH: u32 = 2048;
-const HEIGHT: u32 = 1024;
+const HEIGHT: u32 = 1024 / 4;
 const LOGICAL_WIDTH: u32 = 1024;
-const LOGICAL_HEIGHT: u32 = 512;
-const BUFFER_SIZE: usize = 1024 * 4;
-const FFT_DIV: usize = 20;
+const LOGICAL_HEIGHT: u32 = 512 / 4;
+const BUFFER_SIZE: usize = 1024 * 2;
+const FFT_DIV: usize = 24;
 
 struct FFTHandler {
     buffer_size: usize,
@@ -53,15 +52,29 @@ struct WindowHandler {
 
 impl WindowHandler {
     fn new(width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
-        let size = LogicalSize::new(width as f64, height as f64);
+        let monitor = event_loop.primary_monitor().unwrap();
+        let monitor_size = monitor.size();
+        let logical_size = LogicalSize::new(1024.0 * 1.5, height as f64);
+
         let window = WindowBuilder::new()
             .with_title("weresoFFT")
-            .with_inner_size(size)
+            // .with_decorations(false)
+            .with_titlebar_hidden(true)
+            // .with_active(true)
+            // .with_has_shadow(true)
+            // .with_inner_size(size)
+            // .with_position(winit::dpi::PhysicalPosition::new(0, 0))
+            // .with_titlebar_buttons_hidden(false)
             .build(&event_loop)
             .unwrap();
 
+        window.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
+        window.set_inner_size(logical_size);
+        window.set_outer_position(winit::dpi::PhysicalPosition::new(0, 0));
+        // window.set_outer_position(winit::dpi::LogicalPosition::new(0.0, 0.0));
+
         WindowHandler {
-            width,
+            width: monitor_size.width,
             height,
             window,
         }
@@ -167,10 +180,9 @@ fn main() -> Result<(), Error> {
         )
         .unwrap();
 
-    let mut interleaved_buffer = vec![0.0; BUFFER_SIZE * 2];
-
     thread::spawn(move || {
         let mut counter = 0;
+        let mut interleaved_buffer = vec![0.0; BUFFER_SIZE * 2];
 
         for sample in reader.samples::<f32>() {
             let sample = sample.unwrap();
@@ -190,8 +202,11 @@ fn main() -> Result<(), Error> {
 
     event_loop.run(move |event, _, control_flow| {
         if let Event::RedrawRequested(_) = event {
-            let fft_results_l = fft_handler_l.read_results();
-            let fft_results_r = fft_handler_r.read_results();
+            window_handler.window.set_visible(true);
+
+            let mut fft_results_l = fft_handler_l.read_results();
+            let mut fft_results_r = fft_handler_r.read_results();
+            fft_results_l.reverse();
 
             graph_handler.update_and_draw(pixels.frame_mut(), &fft_results_l, &fft_results_r);
 
@@ -207,6 +222,7 @@ fn main() -> Result<(), Error> {
                 return;
             }
             if let Some(size) = input.window_resized() {
+                // _ = pixels.resize_buffer(size.width, size.height);
                 _ = pixels.resize_surface(size.width, size.height);
             }
         }
