@@ -1,128 +1,27 @@
+mod fft_handler;
+mod graph_handler;
 mod grid;
+mod window_handler;
+use crate::graph_handler::GraphHandler;
 use crossbeam_channel as channel;
-use grid::*;
+use fft_handler::FFTHandler;
 use pixels::{Error, Pixels, SurfaceTexture};
 use portaudio as pa;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use weresocool_fft::WscFFT;
-use winit::platform::macos::WindowBuilderExtMacOS;
+use window_handler::WindowHandler;
 use winit::{
-    dpi::LogicalSize,
     event::{Event, VirtualKeyCode},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
 };
 use winit_input_helper::WinitInputHelper;
 
 const WIDTH: u32 = 2048;
-const HEIGHT: u32 = 1024 / 4;
+const HEIGHT: u32 = 1024 / 7;
 const LOGICAL_WIDTH: u32 = 1024;
-const LOGICAL_HEIGHT: u32 = 512 / 4;
+const LOGICAL_HEIGHT: u32 = 512 / 9;
 const BUFFER_SIZE: usize = 1024 * 2;
 const FFT_DIV: usize = 24;
-
-struct FFTHandler {
-    buffer_size: usize,
-    num_results: usize,
-    read_fn: Box<dyn Fn() -> Vec<f32>>,
-}
-
-impl FFTHandler {
-    fn new(buffer_size: usize, num_results: usize, r_fft: channel::Receiver<Vec<f32>>) -> Self {
-        let (read_fn, _) = WscFFT::spawn(buffer_size, r_fft);
-        FFTHandler {
-            buffer_size,
-            num_results,
-            read_fn: Box::new(read_fn),
-        }
-    }
-
-    fn read_results(&self) -> Vec<f32> {
-        let results = (self.read_fn)();
-        results[2..self.num_results].to_vec()
-    }
-}
-
-struct WindowHandler {
-    width: u32,
-    height: u32,
-    window: winit::window::Window,
-}
-
-impl WindowHandler {
-    fn new(width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
-        let monitor = event_loop.primary_monitor().unwrap();
-        let monitor_size = monitor.size();
-        let actual_width = monitor_size.width / 2;
-        dbg!(monitor_size);
-        let logical_size = LogicalSize::new(0.9 * actual_width as f64, height as f64);
-
-        let window = WindowBuilder::new()
-            .with_title("weresoFFT")
-            // .with_decorations(false)
-            .with_titlebar_hidden(true)
-            // .with_active(true)
-            // .with_has_shadow(true)
-            // .with_inner_size(size)
-            // .with_position(winit::dpi::PhysicalPosition::new(0, 0))
-            // .with_titlebar_buttons_hidden(false)
-            .build(&event_loop)
-            .unwrap();
-
-        window.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
-        window.set_inner_size(logical_size);
-        window.set_outer_position(winit::dpi::PhysicalPosition::new(
-            0.1 * actual_width as f32,
-            0.0,
-        ));
-        // window.set_outer_position(winit::dpi::LogicalPosition::new(0.0, 0.0));
-
-        WindowHandler {
-            width: monitor_size.width,
-            height,
-            window,
-        }
-    }
-
-    fn inner_size(&self) -> (u32, u32) {
-        let size = self.window.inner_size();
-        (size.width, size.height)
-    }
-}
-
-struct GraphHandler {
-    width: usize,
-    height: usize,
-    grid: Grid,
-}
-
-impl GraphHandler {
-    fn new(width: usize, height: usize) -> Self {
-        let grid = Grid::new_bargraph(width, height);
-        GraphHandler {
-            width,
-            height,
-            grid,
-        }
-    }
-
-    fn update_and_draw(&mut self, pixels: &mut [u8], l: &[f32], r: &[f32]) {
-        self.grid.update_bargraph(l, r);
-        self.grid.draw(pixels);
-    }
-}
-
-fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
-    let def_output = pa.default_output_device().unwrap();
-    let output_info = pa.device_info(def_output).unwrap();
-    let latency = output_info.default_low_output_latency;
-    let output_params = pa::StreamParameters::new(def_output, 2, true, latency);
-
-    let output_settings = pa::OutputStreamSettings::new(output_params, 48000.0, BUFFER_SIZE as u32);
-
-    Ok(output_settings)
-}
 
 fn main() -> Result<(), Error> {
     env_logger::init();
@@ -236,4 +135,15 @@ fn main() -> Result<(), Error> {
             window_handler.window.request_redraw();
         }
     });
+}
+
+fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
+    let def_output = pa.default_output_device().unwrap();
+    let output_info = pa.device_info(def_output).unwrap();
+    let latency = output_info.default_low_output_latency;
+    let output_params = pa::StreamParameters::new(def_output, 2, true, latency);
+
+    let output_settings = pa::OutputStreamSettings::new(output_params, 48000.0, BUFFER_SIZE as u32);
+
+    Ok(output_settings)
 }
