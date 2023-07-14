@@ -5,6 +5,7 @@ mod window_handler;
 use crate::graph_handler::GraphHandler;
 use crossbeam_channel as channel;
 use fft_handler::FFTHandler;
+use pa::{NonBlocking, Output, Stream};
 use pixels::{Error, Pixels, SurfaceTexture};
 use portaudio as pa;
 use std::sync::{Arc, Mutex};
@@ -24,7 +25,9 @@ const BUFFER_SIZE: usize = 1024 * 2;
 const FFT_DIV: usize = 24;
 
 fn main() -> Result<(), Error> {
-    env_logger::init();
+    let (audio_channel_sender, audio_receiever) = channel::unbounded();
+    let audio_receiver = Arc::new(Mutex::new(audio_receiever));
+
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
 
@@ -41,27 +44,88 @@ fn main() -> Result<(), Error> {
 
     let (s_fft_r, r_fft_r) = channel::unbounded();
     let (s_fft_l, r_fft_l) = channel::unbounded();
-    let (s_audio, r_audio) = channel::unbounded();
-    let r_audio = Arc::new(Mutex::new(r_audio));
-    let r_audio_clone = Arc::clone(&r_audio);
 
     let fft_handler_l = FFTHandler::new(BUFFER_SIZE as usize, BUFFER_SIZE / FFT_DIV, r_fft_l);
     let fft_handler_r = FFTHandler::new(BUFFER_SIZE as usize, BUFFER_SIZE / FFT_DIV, r_fft_r);
 
-    let mut reader = hound::WavReader::open("./src/for_sam.wav").unwrap();
+    let _stream_handle = spawn_audio_player(audio_receiver.clone(), s_fft_l, s_fft_r);
+    _ = spawn_audio_reader("./src/for_sam.wav".into(), audio_channel_sender);
+
+    event_loop.run(move |event, _, control_flow| {
+        if let Event::RedrawRequested(_) = event {
+            window_handler.window.set_visible(true);
+
+            let mut fft_results_l = fft_handler_l.read_results();
+            let fft_results_r = fft_handler_r.read_results();
+            fft_results_l.reverse();
+            graph_handler.update_and_draw(pixels.frame_mut(), &fft_results_l, &fft_results_r);
+            if pixels.render().is_err() {
+                *control_flow = ControlFlow::Exit;
+                return;
+            }
+        }
+
+        if input.update(&event) {
+            if input.key_pressed(VirtualKeyCode::Escape) || input.quit() {
+                *control_flow = ControlFlow::Exit;
+                return;
+            }
+            if let Some(size) = input.window_resized() {
+                // _ = pixels.resize_buffer(size.width, size.height);
+                _ = pixels.resize_surface(size.width, size.height);
+            }
+        }
+
+        if let Event::MainEventsCleared = event {
+            window_handler.window.request_redraw();
+        }
+    });
+}
+
+fn spawn_audio_reader(
+    filename: String,
+    audio_channel_sender: channel::Sender<Vec<f32>>,
+) -> Result<(), ()> {
+    let mut reader = hound::WavReader::open(filename).unwrap();
     let spec = reader.spec();
     println!("{:?}", spec);
 
+    thread::spawn(move || {
+        let mut counter = 0;
+        let mut interleaved_buffer = vec![0.0; BUFFER_SIZE * 2];
+
+        for sample in reader.samples::<f32>() {
+            let sample = sample.unwrap();
+            let index = counter % (BUFFER_SIZE * 2);
+
+            interleaved_buffer[index] = sample;
+
+            counter += 1;
+
+            if counter % (BUFFER_SIZE * 2) == 0 {
+                audio_channel_sender
+                    .send(interleaved_buffer.clone())
+                    .unwrap();
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn spawn_audio_player(
+    audio_receiver: Arc<Mutex<channel::Receiver<Vec<f32>>>>,
+    sender_l: channel::Sender<Vec<f32>>,
+    sender_r: channel::Sender<Vec<f32>>,
+) -> Result<Stream<NonBlocking, Output<f32>>, ()> {
     let pa = pa::PortAudio::new().unwrap();
-    let output_stream_settings = get_output_settings(&pa)?;
+    let output_stream_settings = get_output_settings(&pa).unwrap();
 
     let mut stream = pa
         .open_non_blocking_stream(
             output_stream_settings,
             move |pa::OutputStreamCallbackArgs { buffer, frames, .. }| {
-                let r_audio_lock = r_audio_clone.lock().unwrap();
-                let sender_l = s_fft_l.clone();
-                let sender_r = s_fft_r.clone();
+                let r_audio_lock = audio_receiver.lock().unwrap();
                 let audio_data = (*r_audio_lock)
                     .recv()
                     .unwrap_or_else(|_| vec![0.0; frames * 2]); // *2 for stereo
@@ -84,57 +148,9 @@ fn main() -> Result<(), Error> {
         )
         .unwrap();
 
-    thread::spawn(move || {
-        let mut counter = 0;
-        let mut interleaved_buffer = vec![0.0; BUFFER_SIZE * 2];
-
-        for sample in reader.samples::<f32>() {
-            let sample = sample.unwrap();
-            let index = counter % (BUFFER_SIZE * 2);
-
-            interleaved_buffer[index] = sample;
-
-            counter += 1;
-
-            if counter % (BUFFER_SIZE * 2) == 0 {
-                s_audio.send(interleaved_buffer.clone()).unwrap();
-            }
-        }
-    });
-
     stream.start().unwrap();
 
-    event_loop.run(move |event, _, control_flow| {
-        if let Event::RedrawRequested(_) = event {
-            window_handler.window.set_visible(true);
-
-            let mut fft_results_l = fft_handler_l.read_results();
-            let mut fft_results_r = fft_handler_r.read_results();
-            fft_results_l.reverse();
-
-            graph_handler.update_and_draw(pixels.frame_mut(), &fft_results_l, &fft_results_r);
-
-            if pixels.render().is_err() {
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-        }
-
-        if input.update(&event) {
-            if input.key_pressed(VirtualKeyCode::Escape) || input.quit() {
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-            if let Some(size) = input.window_resized() {
-                // _ = pixels.resize_buffer(size.width, size.height);
-                _ = pixels.resize_surface(size.width, size.height);
-            }
-        }
-
-        if let Event::MainEventsCleared = event {
-            window_handler.window.request_redraw();
-        }
-    });
+    Ok(stream)
 }
 
 fn get_output_settings(pa: &pa::PortAudio) -> Result<pa::stream::OutputSettings<f32>, Error> {
