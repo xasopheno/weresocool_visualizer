@@ -6,7 +6,7 @@ use crate::graph_handler::GraphHandler;
 use crossbeam_channel as channel;
 use fft_handler::FFTHandler;
 use pa::{NonBlocking, Output, Stream};
-use pixels::{Error, Pixels, SurfaceTexture};
+use pixels::Error;
 use portaudio as pa;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -33,33 +33,24 @@ fn main() -> Result<(), Error> {
 
     let window_handler = WindowHandler::new(LOGICAL_WIDTH, LOGICAL_HEIGHT, &event_loop);
 
-    let mut pixels = {
-        let (window_width, window_height) = window_handler.inner_size();
-        let surface_texture =
-            SurfaceTexture::new(window_width, window_height, &window_handler.window);
-        Pixels::new(WIDTH, HEIGHT, surface_texture)?
-    };
+    let mut graph_handler = GraphHandler::new(
+        WIDTH as usize,
+        HEIGHT as usize,
+        BUFFER_SIZE as usize,
+        BUFFER_SIZE / FFT_DIV,
+        &window_handler.window,
+    )
+    .unwrap();
 
-    let mut graph_handler = GraphHandler::new(WIDTH as usize, HEIGHT as usize);
+    let (fft_sender_l, fft_sender_r) = graph_handler.get_fft_senders();
 
-    let (s_fft_r, r_fft_r) = channel::unbounded();
-    let (s_fft_l, r_fft_l) = channel::unbounded();
-
-    let fft_handler_l = FFTHandler::new(BUFFER_SIZE as usize, BUFFER_SIZE / FFT_DIV, r_fft_l);
-    let fft_handler_r = FFTHandler::new(BUFFER_SIZE as usize, BUFFER_SIZE / FFT_DIV, r_fft_r);
-
-    let _stream_handle = spawn_audio_player(audio_receiver.clone(), s_fft_l, s_fft_r);
+    let _stream_handle = spawn_audio_player(audio_receiver.clone(), fft_sender_l, fft_sender_r);
     _ = spawn_audio_reader("./src/for_sam.wav".into(), audio_channel_sender);
 
     event_loop.run(move |event, _, control_flow| {
         if let Event::RedrawRequested(_) = event {
             window_handler.window.set_visible(true);
-
-            let mut fft_results_l = fft_handler_l.read_results();
-            let fft_results_r = fft_handler_r.read_results();
-            fft_results_l.reverse();
-            graph_handler.update_and_draw(pixels.frame_mut(), &fft_results_l, &fft_results_r);
-            if pixels.render().is_err() {
+            if let Err(_) = graph_handler.update_and_draw() {
                 *control_flow = ControlFlow::Exit;
                 return;
             }
@@ -72,7 +63,7 @@ fn main() -> Result<(), Error> {
             }
             if let Some(size) = input.window_resized() {
                 // _ = pixels.resize_buffer(size.width, size.height);
-                _ = pixels.resize_surface(size.width, size.height);
+                _ = graph_handler.resize_surface(size.width, size.height);
             }
         }
 
@@ -115,8 +106,8 @@ fn spawn_audio_reader(
 
 fn spawn_audio_player(
     audio_receiver: Arc<Mutex<channel::Receiver<Vec<f32>>>>,
-    sender_l: channel::Sender<Vec<f32>>,
-    sender_r: channel::Sender<Vec<f32>>,
+    sender_l: Arc<channel::Sender<Vec<f32>>>,
+    sender_r: Arc<channel::Sender<Vec<f32>>>,
 ) -> Result<Stream<NonBlocking, Output<f32>>, ()> {
     let pa = pa::PortAudio::new().unwrap();
     let output_stream_settings = get_output_settings(&pa).unwrap();
