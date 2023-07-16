@@ -38,6 +38,14 @@ impl GraphHandler {
     pub fn update_and_draw(&mut self) -> Result<(), Error> {
         let mut fft_results_l = self.fft_handler_l.read_results();
         let fft_results_r = self.fft_handler_r.read_results();
+
+        // Skip updating and drawing if the FFT results are all zero
+        if fft_results_l.iter().all(|&val| val == 0.0)
+            && fft_results_r.iter().all(|&val| val == 0.0)
+        {
+            return Ok(());
+        }
+
         fft_results_l.reverse();
         self.grid.update_bargraph(&fft_results_l, &fft_results_r);
         self.grid.draw(self.pixels.frame_mut());

@@ -8,13 +8,20 @@ use std::thread;
 pub fn spawn_audio(
     buffer_size: usize,
     filename: String,
-    audio_channel_sender: channel::Sender<Vec<f32>>,
-    audio_receiver: Arc<Mutex<channel::Receiver<Vec<f32>>>>,
-    sender_l: Arc<channel::Sender<Vec<f32>>>,
-    sender_r: Arc<channel::Sender<Vec<f32>>>,
+    fft_sender_l: Arc<channel::Sender<Vec<f32>>>,
+    fft_sender_r: Arc<channel::Sender<Vec<f32>>>,
 ) -> Stream<NonBlocking, Output<f32>> {
-    let stream_handle =
-        spawn_audio_player(buffer_size, audio_receiver.clone(), sender_l, sender_r).unwrap();
+    let (audio_channel_sender, audio_receiever) = channel::unbounded();
+    let audio_receiver = Arc::new(Mutex::new(audio_receiever));
+
+    let stream_handle = spawn_audio_player(
+        buffer_size,
+        audio_receiver.clone(),
+        fft_sender_l,
+        fft_sender_r,
+    )
+    .unwrap();
+
     _ = spawn_audio_reader(buffer_size, filename, audio_channel_sender);
 
     stream_handle
