@@ -20,7 +20,7 @@ impl WindowHandler {
             .with_title("weresoFFT")
             // .with_decorations(false)
             .with_titlebar_hidden(true)
-            // .with_active(true)
+            .with_active(false)
             // .with_has_shadow(true)
             // .with_inner_size(size)
             // .with_position(winit::dpi::PhysicalPosition::new(0, 0))

@@ -26,7 +26,7 @@ impl WereSoCoolSpectrumConfig {
             logical_width: 1024,
             logical_height: 512 / 9,
             buffer_size: 1024 * 2,
-            fft_div: 16,
+            fft_div: 12,
         }
     }
 }
