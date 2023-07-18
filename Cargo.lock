@@ -171,6 +171,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-ringbuf"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c5a853851d9a416e4674abf8f47bac16e8c7f0a4f9a143accf3fbd13bdbf1f7"
+dependencies = [
+ "futures",
+ "ringbuf",
+]
+
+[[package]]
 name = "async-task"
 version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2213,6 +2223,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "216080ab382b992234dda86873c18d4c48358f5cfcb70fd693d7f6f2131b628b"
 
 [[package]]
+name = "ringbuf"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79abed428d1fd2a128201cec72c5f6938e2da607c6f3745f769fabea399d950a"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "rodio"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2885,10 +2904,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9193164d4de03a926d909d3bc7c30543cecb35400c02114792c2cae20d5e2dbb"
 
 [[package]]
-name = "weresocool_double_buffer"
-version = "0.1.0"
-
-[[package]]
 name = "weresocool_fft"
 version = "0.1.0"
 dependencies = [
@@ -2898,15 +2913,21 @@ dependencies = [
  "num-traits",
  "once_cell",
  "plotters",
+ "ringbuf",
  "rustfft",
- "weresocool_double_buffer",
+ "weresocool_ring_buffer",
 ]
+
+[[package]]
+name = "weresocool_ring_buffer"
+version = "0.1.0"
 
 [[package]]
 name = "weresocool_visualizer"
 version = "0.1.0"
 dependencies = [
  "async-executor",
+ "async-ringbuf",
  "bytemuck",
  "byteorder",
  "criterion",
@@ -2925,6 +2946,7 @@ dependencies = [
  "portaudio",
  "rand",
  "randomize",
+ "ringbuf",
  "rodio",
  "weresocool_fft",
  "wgpu",

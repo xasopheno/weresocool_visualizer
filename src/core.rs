@@ -21,12 +21,12 @@ pub struct WereSoCoolSpectrumConfig {
 impl WereSoCoolSpectrumConfig {
     pub fn new() -> Self {
         Self {
-            width: 2400,
+            width: 1024 * 2,
             height: 1024 / 7,
             logical_width: 1024,
             logical_height: 512 / 9,
             buffer_size: 1024 * 2,
-            fft_div: 24,
+            fft_div: 16,
         }
     }
 }

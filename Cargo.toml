@@ -37,6 +37,8 @@ crossbeam-channel = "0.5.8"
 rodio = "0.17.1"
 hound = "3.5.0"
 portaudio = "0.7.0"
+ringbuf = "0.3.3"
+async-ringbuf = "0.1.3"
 
 [dev-dependencies]
 criterion = "0.5.1"

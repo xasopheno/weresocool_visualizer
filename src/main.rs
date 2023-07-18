@@ -13,7 +13,7 @@ fn main() -> Result<(), Error> {
     let (mut spectrum, (fft_sender_l, fft_sender_r)) = WereSoCoolSpectrumCore::new(&config)?;
 
     let _audio_stream_handle = spawn_audio(
-        config.buffer_size,
+        config.buffer_size * 6,
         "./src/for_sam.wav".into(),
         fft_sender_l,
         fft_sender_r,
