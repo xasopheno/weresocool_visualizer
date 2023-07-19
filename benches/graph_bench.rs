@@ -15,8 +15,8 @@ fn benchmark_update_and_draw(c: &mut Criterion) {
     let mut graph_handler = GraphHandler::new(
         config.width as usize,
         config.height as usize,
-        config.buffer_size as usize,
-        config.buffer_size / config.fft_div as usize,
+        config.visual_buffer_size as usize,
+        config.visual_buffer_size / config.fft_div as usize,
         &window_handler.window,
     )
     .unwrap();

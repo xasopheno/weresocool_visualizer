@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub fn spawn_audio(
-    buffer_size: usize,
+    config: &crate::core::WereSoCoolSpectrumConfig,
     filename: String,
     fft_sender_l: Arc<channel::Sender<Vec<f32>>>,
     fft_sender_r: Arc<channel::Sender<Vec<f32>>>,
@@ -14,27 +14,23 @@ pub fn spawn_audio(
     let (audio_channel_sender, audio_receiever) = channel::unbounded();
     let audio_receiver = Arc::new(Mutex::new(audio_receiever));
 
-    let stream_handle = spawn_audio_player(
-        buffer_size,
-        audio_receiver.clone(),
-        fft_sender_l,
-        fft_sender_r,
-    )
-    .unwrap();
+    let stream_handle =
+        spawn_audio_player(config, audio_receiver.clone(), fft_sender_l, fft_sender_r).unwrap();
 
-    _ = spawn_audio_reader(buffer_size, filename, audio_channel_sender);
+    _ = spawn_audio_reader(config, filename, audio_channel_sender);
 
     stream_handle
 }
 
 fn spawn_audio_reader(
-    buffer_size: usize,
+    config: &crate::core::WereSoCoolSpectrumConfig,
     filename: String,
     audio_channel_sender: channel::Sender<Vec<f32>>,
 ) -> Result<(), ()> {
     let mut reader = hound::WavReader::open(filename).unwrap();
     let spec = reader.spec();
     println!("{:?}", spec);
+    let buffer_size = config.audio_buffer_size;
 
     thread::spawn(move || {
         let mut counter = 0;
@@ -60,13 +56,13 @@ fn spawn_audio_reader(
 }
 
 fn spawn_audio_player(
-    buffer_size: usize,
+    config: &crate::core::WereSoCoolSpectrumConfig,
     audio_receiver: Arc<Mutex<channel::Receiver<Vec<f32>>>>,
     sender_l: Arc<channel::Sender<Vec<f32>>>,
     sender_r: Arc<channel::Sender<Vec<f32>>>,
 ) -> Result<Stream<NonBlocking, Output<f32>>, ()> {
     let pa = pa::PortAudio::new().unwrap();
-    let output_stream_settings = get_output_settings(buffer_size, &pa).unwrap();
+    let output_stream_settings = get_output_settings(config, &pa).unwrap();
 
     let mut stream = pa
         .open_non_blocking_stream(
@@ -101,7 +97,7 @@ fn spawn_audio_player(
 }
 
 fn get_output_settings(
-    buffer_size: usize,
+    config: &crate::core::WereSoCoolSpectrumConfig,
     pa: &pa::PortAudio,
 ) -> Result<pa::stream::OutputSettings<f32>, Error> {
     let def_output = pa.default_output_device().unwrap();
@@ -109,7 +105,11 @@ fn get_output_settings(
     let latency = output_info.default_low_output_latency;
     let output_params = pa::StreamParameters::new(def_output, 2, true, latency);
 
-    let output_settings = pa::OutputStreamSettings::new(output_params, 48000.0, buffer_size as u32);
+    let output_settings = pa::OutputStreamSettings::new(
+        output_params,
+        config.sample_rate as f64,
+        config.audio_buffer_size as u32,
+    );
 
     Ok(output_settings)
 }

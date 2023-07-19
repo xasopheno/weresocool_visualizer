@@ -14,8 +14,11 @@ pub struct WereSoCoolSpectrumConfig {
     pub height: u32,
     pub logical_width: u32,
     pub logical_height: u32,
-    pub buffer_size: usize,
+    pub visual_buffer_size: usize,
+    pub audio_buffer_size: usize,
+    pub ring_buffer_size: usize,
     pub fft_div: usize,
+    pub sample_rate: usize,
 }
 
 impl WereSoCoolSpectrumConfig {
@@ -25,8 +28,11 @@ impl WereSoCoolSpectrumConfig {
             height: 1024 / 7,
             logical_width: 1024,
             logical_height: 512 / 9,
-            buffer_size: 1024 * 2,
+            visual_buffer_size: 1024 * 2,
+            audio_buffer_size: 1024 * 12,
+            ring_buffer_size: 10,
             fft_div: 12,
+            sample_rate: 48_000,
         }
     }
 }
@@ -55,13 +61,7 @@ impl WereSoCoolSpectrumCore {
         let window_handler =
             WindowHandler::new(config.logical_width, config.logical_height, &event_loop);
 
-        let graph_handler = GraphHandler::new(
-            config.width as usize,
-            config.height as usize,
-            config.buffer_size as usize,
-            config.buffer_size / config.fft_div,
-            &window_handler.window,
-        )?;
+        let graph_handler = GraphHandler::new(&config, &window_handler.window)?;
 
         let (fft_sender_l, fft_sender_r) = graph_handler.get_fft_senders();
 

@@ -14,20 +14,18 @@ pub struct GraphHandler {
 
 impl GraphHandler {
     pub fn new(
-        width: usize,
-        height: usize,
-        buffer_size: usize,
-        num_results: usize,
+        config: &crate::core::WereSoCoolSpectrumConfig,
         window: &winit::window::Window,
     ) -> Result<Self, Error> {
-        let surface_texture = SurfaceTexture::new(width as u32, height as u32, window);
-        let pixels = Pixels::new(width as u32, height as u32, surface_texture)?;
-        let grid = Grid::new_bargraph(width, height);
-        let fft_handler_l = FFTHandler::new(buffer_size, num_results);
-        let fft_handler_r = FFTHandler::new(buffer_size, num_results);
+        let surface_texture =
+            SurfaceTexture::new(config.width as u32, config.height as u32, window);
+        let pixels = Pixels::new(config.width as u32, config.height as u32, surface_texture)?;
+        let grid = Grid::new_bargraph(config.width as usize, config.height as usize);
+        let fft_handler_l = FFTHandler::new(config);
+        let fft_handler_r = FFTHandler::new(config);
         Ok(GraphHandler {
-            width,
-            height,
+            width: config.width as usize,
+            height: config.height as usize,
             grid,
             pixels,
             fft_handler_l,

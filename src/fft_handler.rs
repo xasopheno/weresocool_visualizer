@@ -10,12 +10,17 @@ pub struct FFTHandler {
 }
 
 impl FFTHandler {
-    pub fn new(buffer_size: usize, num_results: usize) -> Self {
+    pub fn new(config: &crate::core::WereSoCoolSpectrumConfig) -> Self {
         let (s_fft, r_fft) = unbounded();
-        let (read_fn, _) = WscFFT::spawn(buffer_size, r_fft);
+        let (read_fn, _) = WscFFT::spawn(
+            config.visual_buffer_size,
+            config.ring_buffer_size,
+            config.sample_rate,
+            r_fft,
+        );
         FFTHandler {
-            buffer_size,
-            num_results,
+            buffer_size: config.visual_buffer_size,
+            num_results: config.visual_buffer_size / config.fft_div,
             read_fn: Box::new(read_fn),
             sender: Arc::new(s_fft),
         }
