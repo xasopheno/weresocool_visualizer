@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 pub fn spawn_audio(
-    config: &crate::core::WereSoCoolSpectrumConfig,
+    config: &crate::WereSoCoolSpectrumConfig,
     filename: String,
     fft_sender_l: Arc<channel::Sender<Vec<f32>>>,
     fft_sender_r: Arc<channel::Sender<Vec<f32>>>,
@@ -23,7 +23,7 @@ pub fn spawn_audio(
 }
 
 fn spawn_audio_reader(
-    config: &crate::core::WereSoCoolSpectrumConfig,
+    config: &crate::WereSoCoolSpectrumConfig,
     filename: String,
     audio_channel_sender: channel::Sender<Vec<f32>>,
 ) -> Result<(), ()> {
@@ -56,7 +56,7 @@ fn spawn_audio_reader(
 }
 
 fn spawn_audio_player(
-    config: &crate::core::WereSoCoolSpectrumConfig,
+    config: &crate::WereSoCoolSpectrumConfig,
     audio_receiver: Arc<Mutex<channel::Receiver<Vec<f32>>>>,
     sender_l: Arc<channel::Sender<Vec<f32>>>,
     sender_r: Arc<channel::Sender<Vec<f32>>>,
@@ -97,7 +97,7 @@ fn spawn_audio_player(
 }
 
 fn get_output_settings(
-    config: &crate::core::WereSoCoolSpectrumConfig,
+    config: &crate::WereSoCoolSpectrumConfig,
     pa: &pa::PortAudio,
 ) -> Result<pa::stream::OutputSettings<f32>, Error> {
     let def_output = pa.default_output_device().unwrap();

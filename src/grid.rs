@@ -13,7 +13,7 @@ impl Cell {
             alive,
             heat,
             activated_this_turn: false,
-            decay: 0.90,
+            decay: 0.96,
         }
     }
 

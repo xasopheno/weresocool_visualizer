@@ -9,7 +9,7 @@ pub struct WindowHandler {
 }
 
 impl WindowHandler {
-    pub fn new(width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
+    pub fn new(_width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
         let monitor = event_loop.primary_monitor().unwrap();
         let monitor_size = monitor.size();
         let actual_width = monitor_size.width / 2;

@@ -29,7 +29,7 @@ impl WereSoCoolSpectrumConfig {
             logical_width: 1024,
             logical_height: 512 / 9,
             visual_buffer_size: 1024 * 2,
-            audio_buffer_size: 1024 * 12,
+            audio_buffer_size: 1024 * 2 * 6,
             ring_buffer_size: 10,
             fft_div: 12,
             sample_rate: 48_000,
@@ -37,13 +37,13 @@ impl WereSoCoolSpectrumConfig {
     }
 }
 
-pub struct WereSoCoolSpectrumCore {
+pub struct WereSoCoolSpectrum {
     window: Arc<Mutex<winit::window::Window>>,
     graph_handler: Arc<Mutex<GraphHandler>>,
     event_loop: Option<EventLoop<()>>,
 }
 
-impl WereSoCoolSpectrumCore {
+impl WereSoCoolSpectrum {
     pub fn new(
         config: &WereSoCoolSpectrumConfig,
     ) -> Result<

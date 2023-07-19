@@ -5,12 +5,12 @@ mod graph_handler;
 mod grid;
 mod window_handler;
 use crate::audio::spawn_audio;
-use crate::core::{WereSoCoolSpectrumConfig, WereSoCoolSpectrumCore};
 use pixels::Error;
+use weresocool_visualizer::{WereSoCoolSpectrum, WereSoCoolSpectrumConfig};
 
 fn main() -> Result<(), Error> {
     let config = WereSoCoolSpectrumConfig::new();
-    let (mut spectrum, (fft_sender_l, fft_sender_r)) = WereSoCoolSpectrumCore::new(&config)?;
+    let (mut spectrum, (fft_sender_l, fft_sender_r)) = WereSoCoolSpectrum::new(&config)?;
 
     let _audio_stream_handle = spawn_audio(
         &config,
