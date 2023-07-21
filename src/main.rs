@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
 
     let _audio_stream_handle = spawn_audio(
         &config,
-        "./src/mmoodd.wav".into(),
+        "./src/for_sam.wav".into(),
         fft_sender_l,
         fft_sender_r,
     );

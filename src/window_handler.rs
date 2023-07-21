@@ -9,12 +9,18 @@ pub struct WindowHandler {
 }
 
 impl WindowHandler {
-    pub fn new(_width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
+    pub fn new(width: u32, height: u32, event_loop: &EventLoop<()>) -> Self {
         let monitor = event_loop.primary_monitor().unwrap();
         let monitor_size = monitor.size();
-        let actual_width = monitor_size.width / 2;
+        let scale_factor = monitor.scale_factor();
+        dbg!(scale_factor);
+        // let actual_width = monitor_size.width / 2;
         dbg!(monitor_size);
-        let logical_size = LogicalSize::new(0.9 * actual_width as f64, height as f64);
+        // let logical_size = LogicalSize::new(0.9 * actual_width as f64, height as f64);
+        let logical_size = LogicalSize::new(
+            monitor_size.width as f64 / scale_factor * 0.9,
+            monitor_size.height as f64 / scale_factor / 15.0,
+        );
 
         let window = WindowBuilder::new()
             .with_title("weresoFFT")
@@ -31,13 +37,15 @@ impl WindowHandler {
         window.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
         window.set_inner_size(logical_size);
         window.set_outer_position(winit::dpi::PhysicalPosition::new(
-            0.1 * actual_width as f32,
+            0.05 * monitor_size.width as f32,
             0.0,
+            // 0.05 * monitor_size.width as f32,
+            // 0.05 * monitor_size.height as f32,
         ));
         // window.set_outer_position(winit::dpi::LogicalPosition::new(0.0, 0.0));
 
         WindowHandler {
-            width: monitor_size.width,
+            width,
             height,
             window,
         }

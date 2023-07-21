@@ -3,6 +3,7 @@ use crate::grid::Grid;
 use crossbeam_channel as channel;
 use pixels::{Error, Pixels, SurfaceTexture};
 use std::sync::Arc;
+
 pub struct GraphHandler {
     width: usize,
     height: usize,
@@ -17,10 +18,12 @@ impl GraphHandler {
         config: &crate::core::WereSoCoolSpectrumConfig,
         window: &winit::window::Window,
     ) -> Result<Self, Error> {
-        let surface_texture =
-            SurfaceTexture::new(config.width as u32, config.height as u32, window);
-        let pixels = Pixels::new(config.width as u32, config.height as u32, surface_texture)?;
-        let grid = Grid::new_bargraph(config.width as usize, config.height as usize);
+        let width = window.inner_size().width as u32;
+        let height = window.inner_size().height as u32;
+
+        let surface_texture = SurfaceTexture::new(width, height, window);
+        let pixels = Pixels::new(width, height as u32, surface_texture)?;
+        let grid = Grid::new_bargraph(width as usize, height as usize);
         let fft_handler_l = FFTHandler::new(config);
         let fft_handler_r = FFTHandler::new(config);
         Ok(GraphHandler {
@@ -38,13 +41,17 @@ impl GraphHandler {
         let fft_results_r = self.fft_handler_r.read_results();
 
         // Skip updating and drawing if the FFT results are all zero
-        if fft_results_l.iter().all(|&val| val == 0.0)
+        if fft_results_l
+            .iter()
+            .chain(fft_results_r.iter())
+            .all(|&val| val == 0.0)
             && fft_results_r.iter().all(|&val| val == 0.0)
         {
             return Ok(());
         }
 
         fft_results_l.reverse();
+
         self.grid.update_bargraph(&fft_results_l, &fft_results_r);
         self.grid.draw(self.pixels.frame_mut());
         _ = self.pixels.render();

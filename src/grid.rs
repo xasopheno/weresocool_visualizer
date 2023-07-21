@@ -13,7 +13,7 @@ impl Cell {
             alive,
             heat,
             activated_this_turn: false,
-            decay: 0.96,
+            decay: 0.98,
         }
     }
 
@@ -61,6 +61,7 @@ impl Grid {
         let bar_width = self.width / heights.len();
 
         for (bar_idx, &bar_height) in heights.iter().enumerate() {
+            // dbg!(bar_height);
             let grid_height = (bar_height * self.height as f32).round() as usize;
             let grid_height = std::cmp::min(grid_height, self.height);
 

@@ -23,11 +23,23 @@ pub struct WereSoCoolSpectrumConfig {
 
 impl WereSoCoolSpectrumConfig {
     pub fn new() -> Self {
+        // Self {
+        // width: 1024 * 2,
+        // height: 1024 / 7,
+        // logical_width: 1024,
+        // logical_height: 512 / 9,
+        // visual_buffer_size: 1024 * 2,
+        // audio_buffer_size: 1024 * 2 * 6,
+        // ring_buffer_size: 10,
+        // fft_div: 12,
+        // sample_rate: 48_000,
+        // }
+
         Self {
             width: 1024 * 2,
-            height: 1024 / 7,
+            height: 1024,
             logical_width: 1024,
-            logical_height: 512 / 9,
+            logical_height: 1024,
             visual_buffer_size: 1024 * 2,
             audio_buffer_size: 1024 * 2 * 6,
             ring_buffer_size: 10,
