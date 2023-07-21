@@ -54,6 +54,7 @@ pub struct WereSoCoolSpectrum {
     window: Arc<Mutex<winit::window::Window>>,
     graph_handler: Arc<Mutex<GraphHandler>>,
     event_loop: Option<EventLoop<()>>,
+    pub scale_factor: f64,
 }
 
 impl WereSoCoolSpectrum {
@@ -86,6 +87,7 @@ impl WereSoCoolSpectrum {
                 window,
                 graph_handler,
                 event_loop: Some(event_loop),
+                scale_factor: window_handler.scale_factor,
             },
             (fft_sender_l, fft_sender_r),
         ))
@@ -127,8 +129,8 @@ impl WereSoCoolSpectrum {
                 if is_dragging {
                     if let Ok(mut locked_window) = window.lock() {
                         if let Ok(mut outer_position) = locked_window.outer_position() {
-                            outer_position.x += delta.0 as i32;
-                            outer_position.y += delta.1 as i32;
+                            outer_position.x += delta.0 as i32 * 2;
+                            outer_position.y += delta.1 as i32 * 2;
                             locked_window.set_outer_position(outer_position);
                         }
                     }

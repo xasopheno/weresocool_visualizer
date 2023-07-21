@@ -5,6 +5,7 @@ use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowBuilder};
 pub struct WindowHandler {
     width: u32,
     height: u32,
+    pub scale_factor: f64,
     pub window: winit::window::Window,
 }
 
@@ -13,7 +14,7 @@ impl WindowHandler {
         let monitor = event_loop.primary_monitor().unwrap();
         let monitor_size = monitor.size();
         let scale_factor = monitor.scale_factor();
-        dbg!(scale_factor);
+        // dbg!(scale_factor);
         // let actual_width = monitor_size.width / 2;
         dbg!(monitor_size);
         // let logical_size = LogicalSize::new(0.9 * actual_width as f64, height as f64);
@@ -48,6 +49,7 @@ impl WindowHandler {
             width,
             height,
             window,
+            scale_factor,
         }
     }
 
