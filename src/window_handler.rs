@@ -18,7 +18,7 @@ impl WindowHandler {
         dbg!(monitor_size);
         // let logical_size = LogicalSize::new(0.9 * actual_width as f64, height as f64);
         let logical_size = LogicalSize::new(
-            monitor_size.width as f64 / scale_factor * 0.9,
+            monitor_size.width as f64 / scale_factor * 0.5,
             monitor_size.height as f64 / scale_factor / 15.0,
         );
 
@@ -37,8 +37,8 @@ impl WindowHandler {
         window.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
         window.set_inner_size(logical_size);
         window.set_outer_position(winit::dpi::PhysicalPosition::new(
-            0.05 * monitor_size.width as f32,
-            0.0,
+            0.5 * monitor_size.width as f32,
+            0.0 * monitor_size.height as f32,
             // 0.05 * monitor_size.width as f32,
             // 0.05 * monitor_size.height as f32,
         ));

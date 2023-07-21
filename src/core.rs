@@ -4,7 +4,8 @@ use crossbeam_channel as channel;
 use pixels::Error;
 use std::sync::{Arc, Mutex};
 use winit::{
-    event::{Event, VirtualKeyCode},
+    dpi::PhysicalPosition,
+    event::{DeviceEvent, ElementState, Event, MouseButton, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
 };
 use winit_input_helper::WinitInputHelper;
@@ -92,6 +93,8 @@ impl WereSoCoolSpectrum {
 
     pub fn run(&mut self) -> Result<(), Error> {
         let mut input = WinitInputHelper::new();
+        let mut is_dragging = false;
+        let mut prev_mouse_position: Option<PhysicalPosition<f64>> = None;
 
         let window = Arc::clone(&self.window);
         let graph_handler = Arc::clone(&self.graph_handler);
@@ -106,8 +109,37 @@ impl WereSoCoolSpectrum {
                 }
             }
 
+            if let Event::WindowEvent {
+                event: WindowEvent::MouseInput { state, button, .. },
+                ..
+            } = event
+            {
+                if button == MouseButton::Left {
+                    is_dragging = state == ElementState::Pressed;
+                }
+            }
+
+            if let Event::DeviceEvent {
+                event: DeviceEvent::MouseMotion { delta },
+                ..
+            } = event
+            {
+                if is_dragging {
+                    if let Ok(mut locked_window) = window.lock() {
+                        if let Ok(mut outer_position) = locked_window.outer_position() {
+                            outer_position.x += delta.0 as i32;
+                            outer_position.y += delta.1 as i32;
+                            locked_window.set_outer_position(outer_position);
+                        }
+                    }
+                }
+            }
+
             if input.update(&event) {
-                if input.key_pressed(VirtualKeyCode::Escape) || input.quit() {
+                if input.key_pressed(VirtualKeyCode::Escape)
+                    || input.close_requested()
+                    || input.destroyed()
+                {
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
