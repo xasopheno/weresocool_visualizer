@@ -1,4 +1,3 @@
-use crate::grid::*;
 use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowBuilder};
 
@@ -38,7 +37,7 @@ impl WindowHandler {
         window.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
         window.set_inner_size(logical_size);
         window.set_outer_position(winit::dpi::PhysicalPosition::new(
-            0.5 * monitor_size.width as f32,
+            0.25 * monitor_size.width as f32,
             0.0 * monitor_size.height as f32,
             // 0.05 * monitor_size.width as f32,
             // 0.05 * monitor_size.height as f32,
