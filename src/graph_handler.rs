@@ -5,30 +5,34 @@ use pixels::{Error, Pixels, SurfaceTexture};
 use std::sync::Arc;
 
 pub struct GraphHandler {
-    width: usize,
-    height: usize,
     grid: Grid,
     pixels: Pixels,
     fft_handler_l: FFTHandler,
     fft_handler_r: FFTHandler,
 }
 
+pub type FFTSender = Arc<channel::Sender<Vec<f32>>>;
+pub type Senders = (FFTSender, FFTSender);
+
+#[allow(dead_code)]
 impl GraphHandler {
+    #[allow(dead_code)]
     pub fn new(
         config: &crate::core::WereSoCoolSpectrumConfig,
         window: &winit::window::Window,
+        width: u32,
+        height: u32,
     ) -> Result<Self, Error> {
-        let width = window.inner_size().width as u32;
-        let height = window.inner_size().height as u32;
+        // dbg!(window.inner_size());
+        // let width = window.width as u32;
+        // let height = window.height as u32;
 
-        let surface_texture = SurfaceTexture::new(width, height, window);
-        let pixels = Pixels::new(width, height as u32, surface_texture)?;
+        let surface_texture = SurfaceTexture::new(width * 2, height * 2, window);
+        let pixels = Pixels::new(width, height, surface_texture)?;
         let grid = Grid::new_bargraph(width as usize, height as usize);
         let fft_handler_l = FFTHandler::new(config);
         let fft_handler_r = FFTHandler::new(config);
         Ok(GraphHandler {
-            width: config.width as usize,
-            height: config.height as usize,
             grid,
             pixels,
             fft_handler_l,
@@ -36,6 +40,7 @@ impl GraphHandler {
         })
     }
 
+    #[allow(dead_code)]
     pub fn update_and_draw(&mut self) -> Result<(), Error> {
         let mut fft_results_l = self.fft_handler_l.read_results();
         let fft_results_r = self.fft_handler_r.read_results();
@@ -58,18 +63,15 @@ impl GraphHandler {
         Ok(())
     }
 
-    pub fn get_fft_senders(
-        &self,
-    ) -> (
-        Arc<channel::Sender<Vec<f32>>>,
-        Arc<channel::Sender<Vec<f32>>>,
-    ) {
+    #[allow(dead_code)]
+    pub fn get_fft_senders(&self) -> Senders {
         (
             self.fft_handler_l.get_sender(),
             self.fft_handler_r.get_sender(),
         )
     }
 
+    #[allow(dead_code)]
     pub fn resize_surface(&mut self, width: u32, height: u32) -> Result<(), Error> {
         self.pixels.resize_surface(width, height).unwrap();
         Ok(())

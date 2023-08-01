@@ -1,6 +1,6 @@
 use crate::graph_handler::GraphHandler;
+use crate::graph_handler::Senders;
 use crate::window_handler::WindowHandler;
-use crossbeam_channel as channel;
 use pixels::Error;
 use std::sync::{Arc, Mutex};
 use winit::{
@@ -23,7 +23,8 @@ pub struct WereSoCoolSpectrumConfig {
 }
 
 impl WereSoCoolSpectrumConfig {
-    pub fn new() -> Self {
+    #[allow(dead_code)]
+    pub fn new(buffer_size: usize) -> Self {
         // Self {
         // width: 1024 * 2,
         // height: 1024 / 7,
@@ -42,7 +43,7 @@ impl WereSoCoolSpectrumConfig {
             logical_width: 1024,
             logical_height: 1024,
             visual_buffer_size: 1024 * 2,
-            audio_buffer_size: 1024 * 2 * 6,
+            audio_buffer_size: buffer_size,
             ring_buffer_size: 10,
             fft_div: 12,
             sample_rate: 48_000,
@@ -58,24 +59,18 @@ pub struct WereSoCoolSpectrum {
 }
 
 impl WereSoCoolSpectrum {
-    pub fn new(
-        config: &WereSoCoolSpectrumConfig,
-    ) -> Result<
-        (
-            Self,
-            (
-                Arc<channel::Sender<Vec<f32>>>,
-                Arc<channel::Sender<Vec<f32>>>,
-            ),
-        ),
-        Error,
-    > {
+    #[allow(dead_code)]
+    pub fn new(config: &WereSoCoolSpectrumConfig) -> Result<(Self, Senders), Error> {
         let event_loop = EventLoop::new();
 
-        let window_handler =
-            WindowHandler::new(config.logical_width, config.logical_height, &event_loop);
+        let window_handler = WindowHandler::new(&event_loop);
 
-        let graph_handler = GraphHandler::new(&config, &window_handler.window)?;
+        let graph_handler = GraphHandler::new(
+            config,
+            &window_handler.window,
+            window_handler.width,
+            window_handler.height,
+        )?;
 
         let (fft_sender_l, fft_sender_r) = graph_handler.get_fft_senders();
 
@@ -93,10 +88,11 @@ impl WereSoCoolSpectrum {
         ))
     }
 
+    #[allow(dead_code)]
     pub fn run(&mut self) -> Result<(), Error> {
         let mut input = WinitInputHelper::new();
         let mut is_dragging = false;
-        let mut prev_mouse_position: Option<PhysicalPosition<f64>> = None;
+        let mut _prev_mouse_position: Option<PhysicalPosition<f64>> = None;
 
         let window = Arc::clone(&self.window);
         let graph_handler = Arc::clone(&self.graph_handler);
@@ -105,7 +101,7 @@ impl WereSoCoolSpectrum {
         event_loop.run(move |event, _, control_flow| {
             if let Event::RedrawRequested(_) = event {
                 let mut graph_handler_guard = graph_handler.lock().unwrap();
-                if let Err(_) = graph_handler_guard.update_and_draw() {
+                if graph_handler_guard.update_and_draw().is_err() {
                     *control_flow = ControlFlow::Exit;
                     return;
                 }
@@ -127,7 +123,7 @@ impl WereSoCoolSpectrum {
             } = event
             {
                 if is_dragging {
-                    if let Ok(mut locked_window) = window.lock() {
+                    if let Ok(locked_window) = window.lock() {
                         if let Ok(mut outer_position) = locked_window.outer_position() {
                             outer_position.x += delta.0 as i32 * 2;
                             outer_position.y += delta.1 as i32 * 2;

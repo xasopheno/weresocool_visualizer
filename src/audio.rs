@@ -1,10 +1,11 @@
 use crossbeam_channel as channel;
 use pa::{NonBlocking, Output, Stream};
 use pixels::Error;
-use portaudio as pa;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use weresocool_portaudio as pa;
 
+#[allow(dead_code)]
 pub fn spawn_audio(
     config: &crate::WereSoCoolSpectrumConfig,
     filename: String,
@@ -15,13 +16,14 @@ pub fn spawn_audio(
     let audio_receiver = Arc::new(Mutex::new(audio_receiever));
 
     let stream_handle =
-        spawn_audio_player(config, audio_receiver.clone(), fft_sender_l, fft_sender_r).unwrap();
+        spawn_audio_player(config, audio_receiver, fft_sender_l, fft_sender_r).unwrap();
 
     _ = spawn_audio_reader(config, filename, audio_channel_sender);
 
     stream_handle
 }
 
+#[allow(dead_code)]
 fn spawn_audio_reader(
     config: &crate::WereSoCoolSpectrumConfig,
     filename: String,
@@ -55,6 +57,7 @@ fn spawn_audio_reader(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn spawn_audio_player(
     config: &crate::WereSoCoolSpectrumConfig,
     audio_receiver: Arc<Mutex<channel::Receiver<Vec<f32>>>>,

@@ -1,9 +1,8 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{unbounded, Sender};
 use std::sync::Arc;
 use weresocool_fft::WscFFT;
 
 pub struct FFTHandler {
-    buffer_size: usize,
     num_results: usize,
     read_fn: Box<dyn Fn() -> Vec<f32>>,
     sender: Arc<Sender<Vec<f32>>>,
@@ -19,7 +18,6 @@ impl FFTHandler {
             r_fft,
         );
         FFTHandler {
-            buffer_size: config.visual_buffer_size,
             num_results: config.visual_buffer_size / config.fft_div,
             read_fn: Box::new(read_fn),
             sender: Arc::new(s_fft),

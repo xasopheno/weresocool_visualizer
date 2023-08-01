@@ -9,7 +9,7 @@ use pixels::Error;
 use weresocool_visualizer::{WereSoCoolSpectrum, WereSoCoolSpectrumConfig};
 
 fn main() -> Result<(), Error> {
-    let config = WereSoCoolSpectrumConfig::new();
+    let config = WereSoCoolSpectrumConfig::new(1024 * 12);
     let (mut spectrum, (fft_sender_l, fft_sender_r)) = WereSoCoolSpectrum::new(&config)?;
 
     let _audio_stream_handle = spawn_audio(
